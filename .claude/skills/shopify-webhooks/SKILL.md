@@ -55,8 +55,8 @@ Rules:
 
 1. **Idempotency is two layers.** `webhook_events` keyed by `webhookId` stops replays of the same delivery. The unique index on `(lineItemId, unitIndex)` stops duplicates when Shopify sends a fresh delivery for the same order. Both are required; neither replaces the other.
 2. **If processing fails after the event row is inserted, delete the row (or mark it failed) before returning 5xx.** Otherwise Shopify's retry is swallowed as a duplicate and the order never gets rings.
-3. **Respond within 5 seconds.** Shopify times out and retries; repeated failures over its retry window can remove the subscription. In the request: verify, de-duplicate, insert rings. Out of the request: QR rendering, storage uploads, Admin API write-back.
-4. **Deferred work must be durable.** A ring with `qr.png == null`, or an order without the `rings-ready` tag, is the pending-work record. A processor must be able to find and finish those after a crash. An un-awaited promise alone is not acceptable: on serverless hosts it is killed when the response is sent. Hosting is undecided, so keep the processor callable from both an in-process trigger and a scheduled sweep.
+3. **Respond within 5 seconds.** Shopify times out and retries; repeated failures over its retry window can remove the subscription. In the request: verify, de-duplicate, look up product tags, insert rings, queue the order. Out of the request: the Admin API write-back.
+4. **Deferred work must be durable.** The webhook queues the order in `ring_orders` (`queueWriteback`) before answering; that row is the pending-work record. `kickWritebacks()` starts processing after the response, an in-process timer sweeps every minute (`startWritebackSweeper`), and `POST /internal/sweep` (bearer `CRON_SECRET`) does the same for hosts without a long-running process. Never replace the queue with an un-awaited promise alone.
 5. **Return 200 for events that need no action** (no ring products in the order, shop unknown). Non-2xx means "retry", so use it only for failures a retry could fix.
 6. **Webhooks arrive out of order and late.** `orders/cancelled` can precede `orders/paid`. On `orders/paid`, skip ring creation if `payload.cancelled_at` is set.
 7. **Never log the payload.** It contains customer names, emails and addresses. Log topic, shop, order name and webhook ID. Remove the template's `console.log(JSON.stringify(payload))` pattern from any handler you copy.
@@ -75,5 +75,6 @@ Call `voidUnclaimedByOrderId` only. A single conditional update; never load ring
 
 - `shopify app webhook trigger --topic orders/paid --address <tunnel>/webhooks/orders/paid` sends a fixture payload. Good for HMAC and routing; its IDs are fake, so it does not prove ring creation against real products.
 - Real test: place an order on the dev store with a tagged product, mark it paid.
+- Automated: `npm test` covers tampered HMAC (401), replay, quantity, mixed cart, cancellation and concurrency against a real in-memory MongoDB (`test/routes.test.ts`, `test/mongo.test.ts`).
 - Replay: re-send the same request with the same `X-Shopify-Webhook-Id`; expect 200 and no new rings.
 - Tamper: change one byte of the body; expect 401.

@@ -48,7 +48,7 @@ For each item, trace the actual code path. Report it only if you can point to th
 - Ring IDs, scan URLs and QR image links do not reach logs, error messages returned to clients, customer-facing emails, storefront-readable metafields, order notes or public routes.
 - Webhook payloads and customer data are not logged.
 - Access tokens and `SHOPIFY_API_SECRET` are not logged, not returned from loaders, and not sent to the browser. Check loader return values: everything a loader returns is visible to the client.
-- QR images are not publicly readable; admin download routes call `authenticate.admin`.
+- QR download links are signed (`app/rings/qr-links.server.ts`) and the route returns 404 for a bad signature, an unknown ring and a void ring. Signed links appear only in the admin page and the app-owned order metafield.
 
 **Admin API**
 - `userErrors` are checked on every mutation.
@@ -56,7 +56,8 @@ For each item, trace the actual code path. Report it only if you can point to th
 - Write-back is safe to run twice.
 
 **Persistence boundary**
-- Route and service code goes through the repository interface; no direct Prisma or driver imports outside the repository implementation.
+- Route and service code goes through `RingRepository`; no direct collection access outside `app/rings/ring-repository.server.ts` and `app/db/`.
+- A change to the ring record shape comes with a matching change to `docs/RING_CONTRACT.md`.
 
 **Config drift** (report once, briefly, if still present)
 - Scopes in `shopify.app.toml` versus the brief's `read_orders,write_orders,read_products`.

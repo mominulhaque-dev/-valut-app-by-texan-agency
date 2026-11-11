@@ -7,31 +7,19 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,write_metaobjects,write_metaobject_definitions"
+scopes = "read_orders,write_orders,read_products"
 
-[product.metafields.app.demo_info]
-type = "single_line_text_field"
-name = "Demo Source Info"
-description = "Tracks products created by the Shopify app template for development"
+# Ring data written back to each order. App-reserved namespace ($app):
+# only this app can write it, merchants can read it in the admin, and it is
+# hidden from the Storefront and Customer Account APIs. The scan link is a
+# key to an unclaimed vault, so it must never be exposed to customers.
+[order.metafields.app.rings]
+type = "json"
+name = "Vault rings"
+description = "Ring IDs, scan links and QR files for the packing team"
 
-  [product.metafields.app.demo_info.access]
-  admin = "merchant_read_write"
-
-[metaobjects.app.example]
-name = "Example"
-description = "An example metaobject definition created by this template"
-
-  [metaobjects.app.example.access]
-  admin = "merchant_read_write"
-
-[metaobjects.app.example.fields.title]
-name = "Title"
-type = "single_line_text_field"
-required = true
-
-[metaobjects.app.example.fields.description]
-name = "Description"
-type = "multi_line_text_field"
+  [order.metafields.app.rings.access]
+  admin = "merchant_read"
 
 [webhooks]
 api_version = "2027-01"
@@ -44,31 +32,13 @@ api_version = "2027-01"
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
-[events]
-api_version = "2026-10"
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/paid"
+  topics = [ "orders/paid" ]
 
-  [[events.subscription]]
-  handle = "product-price-change"
-  topic = "Product"
-  actions = [ "update" ]
-  triggers = [ "product.variants.price", "product.variants.compareAtPrice" ]
-  uri = "/webhooks/products/update"
-  query = """
-  query product_variant_price_change($productId: ID!, $variantsId: ID!) {\r
-    product(id: $productId) {\r
-      id\r
-      title\r
-      status\r
-    }\r
-    productVariant(id: $variantsId) {\r
-      id\r
-      title\r
-      price\r
-      compareAtPrice\r
-    }\r
-  }\r
-  """
-  query_filter = "product.status:'ACTIVE'"
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/cancelled"
+  topics = [ "orders/cancelled" ]
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]

@@ -6,7 +6,12 @@ import { type EntryContext } from "react-router";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 
+import { startWritebackSweeper } from "./rings/runner.server";
+
 export const streamTimeout = 5000;
+
+// Retries queued order write-backs in the background on long-running servers.
+startWritebackSweeper();
 
 export default async function handleRequest(
   request: Request,

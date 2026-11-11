@@ -20,7 +20,8 @@ Goal: an honest answer to "is this phase finished?", with evidence, before the n
 4. Run the project gates and report the real results:
    - `npm run typecheck`
    - `npm run lint`
-   - the test command, if the project has one. If there are no tests for this phase's logic, say so as a gap; do not write them unless asked.
+   - `npm test` (the first run downloads a MongoDB binary for the integration tests). If this phase's logic has no test, say so as a gap.
+   - `npm run build`
 5. Run the `ring-invariant-reviewer` agent on the phase's changes if the phase touched rings, webhooks, QR or write-back code, and include its findings.
 6. Check section 6 of the brief: name any open item that blocks the next phase.
 
@@ -37,7 +38,8 @@ All of Phase 8 confirmed on the dev store, plus:
 - `VAULT_BASE_URL` is the final production domain, confirmed by the client in writing
 - the ring ID alphabet is confirmed with the Vault developer
 - `distribution` in `app/shopify.server.ts` matches custom distribution
-- access tokens are encrypted at rest
-- the production database is not SQLite, and has the unique index on `(lineItemId, unitIndex)`
+- `TOKEN_ENCRYPTION_KEY` in production is its own key, not the development one
+- the production MongoDB has the unique index `order_unit_unique` on `rings`
+- the Vault developer has agreed to `docs/RING_CONTRACT.md`
 - no template demo leftovers remain in `shopify.app.toml` (demo metafield, metaobject, product event subscription, unused scopes)
 - no handler logs webhook payloads

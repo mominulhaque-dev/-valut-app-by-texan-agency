@@ -59,31 +59,34 @@ Indexes:
 3. **Ring IDs are unguessable.** 12 characters from the alphabet below, generated with `node:crypto` (`randomInt`, which is unbiased). Never `Math.random`, never sequential, never derived from order data.
 4. **The scan URL is a key.** Until claimed, whoever holds it can claim the vault. It may appear only on the physical ring and in the Shopify admin. Never in customer emails, the order status page, storefront-readable metafields, order notes, or logs. Log the ring ID's last 4 characters at most.
 5. **Uniqueness is enforced by the database, not by application checks.** Insert and treat a duplicate-key error as "already done".
-6. **Shopify access tokens are encrypted at rest.** The template's Prisma `Session.accessToken` is plaintext; that has to be dealt with before production.
+6. **Shopify access tokens are encrypted at rest.** Sessions are stored through `app/db/session-storage.server.ts` (AES-256-GCM, key in `TOKEN_ENCRYPTION_KEY`). Never add a second place that stores a token.
 7. **No binary data in the database.** QR images and anything else binary go to object storage; the record holds the key.
 
 ## Ring ID alphabet
 
 `23456789ABCDEFGHJKMNPQRSTVWXYZ` (30 characters): Crockford base32 with `0` and `1` also removed, following the brief's "no 0/O, no 1/I/L". About 59 bits for 12 characters.
 
-This is an interpretation of the brief (standard Crockford keeps `0` and `1`). It must be confirmed with the developer before the first production ring exists, because IDs are permanent. Keep the alphabet in one constant, and export a validator (`/^[2-9A-HJKMNP-TV-Z]{12}$/`) for the Vault side to share.
+The developer approved this alphabet; it still has to be confirmed with the Vault developer before the first production ring exists, because IDs are permanent. It lives in `app/rings/ring-id.ts` only, with the validator `/^[2-9A-HJKMNP-TV-Z]{12}$/`.
 
 On an ID collision at insert, generate a new ID and retry a small bounded number of times.
 
-## Storage interface
+## Storage
 
-The database is undecided (brief open item 1: MongoDB vs Firebase). The template ships Prisma with SQLite.
+MongoDB (developer's decision), through the official `mongodb` driver. Collections: `rings` (shared with the Vault app), and `ring_orders`, `webhook_events`, `shopify_sessions` (this app only). Indexes are created in `ensureIndexes` in `app/db/mongo.server.ts`.
 
-All ring and webhook-event persistence goes through a repository interface (for example `app/rings/ring-repository.server.ts`); route and service code never import the Prisma client or a Mongo driver directly. The interface exposes intent, not queries:
+All ring persistence goes through the `RingRepository` interface in `app/rings/ring-repository.server.ts`. Routes and services never use a collection directly. The interface exposes intent, not queries:
 
-- `createRingsForOrder(rings)`: bulk insert, duplicates skipped, returns the rings that now exist for the order
-- `findByOrderId(orderId)`
-- `voidUnclaimedByOrderId(orderId)`: conditional update, returns count
-- `setQrKeys(ringId, { png, svg })`
-- `recordWebhookEvent(id, topic)`: returns `false` when already recorded
+- `ensureRingsForOrder`: idempotent; one ring per unit, returns the order's rings
+- `findRingById`, `findRingsByOrderId(s)`
+- `voidUnclaimedByOrderId`: one conditional update
+- `recordWebhookEvent` / `forgetWebhookEvent`
+- `queueWriteback`, `requeueWriteback`, `claimDueWritebacks`, `claimWriteback`, `completeWriteback`, `failWriteback`: the durable write-back queue (`ring_orders`)
+- `listOrders`: admin page, always scoped by shop
 
-Swapping the database must mean writing one new implementation and nothing else.
+Services take the repository as a parameter so tests can run them against a real in-memory MongoDB (`test/mongo.test.ts`). New persistence needs a new interface method, not a direct query in a route.
+
+The shared contract with the Vault app is written down in `docs/RING_CONTRACT.md`. Update it in the same change as any change to the ring record.
 
 ## Open items that block work
 
-Ask the developer instead of guessing: which database (blocks Phase 3), how ring products are marked (default `RING_PRODUCT_TAG=has_vault_ring`), whether the Vault app reads the DB or calls an API here (blocks Phase 7), final domain, hosting target.
+Ask the developer instead of guessing: the final production domain, the hosting target, and whether the Vault app has agreed to `docs/RING_CONTRACT.md` (shared MongoDB, or the optional read API at `/api/rings/:ringId`). Ring products are marked with the tag in `RING_PRODUCT_TAG` (default `has_vault_ring`).

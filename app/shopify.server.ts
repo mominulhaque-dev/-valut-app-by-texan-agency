@@ -4,8 +4,11 @@ import {
   AppDistribution,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
-import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
-import prisma from "./db.server";
+import { getConfig } from "./config.server";
+import { mongoSessionStorage } from "./db/session-storage.server";
+
+// Fail at startup, not on the first order, when the environment is incomplete.
+getConfig();
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -14,8 +17,10 @@ const shopify = shopifyApp({
   scopes: process.env.SCOPES?.split(","),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
-  sessionStorage: new PrismaSessionStorage(prisma),
-  distribution: AppDistribution.AppStore,
+  sessionStorage: mongoSessionStorage,
+  // Custom distribution: the app is installed on one merchant's store through
+  // an install link, not listed on the App Store.
+  distribution: AppDistribution.SingleMerchant,
   future: {
     expiringOfflineAccessTokens: true,
   },

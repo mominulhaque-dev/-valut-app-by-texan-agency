@@ -27,24 +27,30 @@ The QR is engraved on metal and cannot be corrected after production. A wrong UR
 
 Both formats are rendered from the same matrix in the same call, so they cannot disagree.
 
-The `qrcode` npm package covers this (`toBuffer` for PNG, `toString({ type: "svg" })` for SVG, options `errorCorrectionLevel: "M"`, `margin: 4`). Adding it is a dependency change: say so when you do it.
+Implementation: `app/rings/qr.server.ts`. The SVG is built by this app from the QR matrix (one path of merged horizontal runs) so its geometry is under our control; the PNG comes from the `qrcode` package with the same settings.
 
-## Storage
+## No stored images
 
-- Upload to object storage (`STORAGE_BUCKET`), not the database and not the app's local disk.
-- Keys are deterministic: `qr/{ringId}.png`, `qr/{ringId}.svg`. Re-running generation overwrites the same objects, which makes it safe to retry.
-- Save the keys on the ring (`qr.png`, `qr.svg`), not full URLs.
-- The bucket is private. A QR image is as sensitive as the scan URL itself. Admin download links are short-lived signed URLs, or streamed through an `authenticate.admin` route.
-- The storage provider is not chosen yet. Put uploads behind a small interface (`put(key, body, contentType)`, `getSignedUrl(key)`), the same way the database is.
+QR images are not stored. They are rendered on demand from the ring ID and the current `VAULT_BASE_URL` by `app/routes/qr.$file.tsx`. A QR is a pure function of those two values, so storing it would only create copies that go stale when the domain changes. The ring's `qr.png` / `qr.svg` fields stay `null`; they are reserved in the shared record shape.
 
-## Where it runs
+If a bucket is ever introduced (`STORAGE_BUCKET`), keys must be deterministic (`qr/{ringId}.svg`), the bucket private, and the record must hold keys, not URLs.
 
-Outside the webhook request (see `shopify-webhooks`). Generation is idempotent: a ring with `qr.png == null` is pending; set the keys only after both uploads succeed.
+## Download links
+
+`/qr/{ringId}.{png|svg}?sig=...`, built by `buildQrLink` in `app/rings/qr-links.server.ts`.
+
+- The signature is an HMAC over ring ID and format, with a key derived from `SHOPIFY_API_SECRET`. The route answers 404 for a missing or wrong signature, an unknown ring and a `VOID` ring, so it cannot be used to probe for ring IDs.
+- A signed link is as sensitive as the scan URL. It appears only in the admin page and in the app-owned order metafield.
+- Links do not expire, because the packing team may open an order days later. Rotating `SHOPIFY_API_SECRET` invalidates them; re-queue the orders' write-back to refresh the metafield.
+- Responses are `Cache-Control: private, no-store`.
 
 ## Tests that must exist
 
-- Decode the generated PNG in a test (for example with `jsqr`) and assert it equals the expected URL exactly.
-- The SVG contains no `<image>` and no `<text>` element.
-- Rendering rejects a malformed ring ID and a non-https base URL.
+These exist in `test/unit.test.ts` and `test/routes.test.ts`; keep them passing and extend them when render settings change:
+
+- The PNG decodes (with `jsqr`) to exactly the expected URL.
+- The SVG, rasterised by the test itself, decodes to exactly the expected URL, contains no `<image>` or `<text>`, and keeps the quiet zone.
+- A malformed ring ID and a non-https base URL are rejected.
+- The download route returns 404 without a valid signature and for void rings.
 
 A passing decode test does not replace the physical check in brief Phase 8: a real phone, poor light, printed at the real disc size. Report that check as not done until the developer confirms he did it.
